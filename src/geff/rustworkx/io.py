@@ -117,6 +117,9 @@ def write(
                     f"Node {node_data} does not have position attribute {position_attr}"
                 )
 
+    if graph.attrs is None:
+        graph.attrs = {}
+
     # write metadata
     roi_min, roi_max = get_roi(graph, position_attr=position_attr)
     metadata = GeffMetadata(
@@ -127,10 +130,10 @@ def write(
         position_attr=position_attr,
         axis_names=tuple(axis_names)
         if axis_names is not None
-        else tuple(graph.attrs.get("axis_names", None)),
+        else graph.attrs.get("axis_names", None),
         axis_units=tuple(axis_units)
         if axis_units is not None
-        else tuple(graph.attrs.get("axis_units", None)),
+        else graph.attrs.get("axis_units", None),
     )
     metadata.write(group)
 
@@ -254,13 +257,15 @@ def read(path: Path | str, validate: bool = True) -> rx.PyGraph | rx.PyDiGraph:
 
     # read meta-data
     graph = rx.PyDiGraph() if metadata.directed else rx.PyGraph()
+    graph.attrs = {}
+
     for key, val in metadata:
         graph.attrs[key] = val
 
     nodes = group["nodes/ids"][:]
     # Add nodes to rustworkx graph
-    for node_id in nodes.tolist():
-        graph.add_node(node_id, {})
+    for _ in nodes.tolist():
+        graph.add_node({})
 
     # collect node attributes
     for name in group["nodes/attrs"]:
