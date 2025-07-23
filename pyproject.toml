@@ -33,7 +33,7 @@ classifiers = [
 [project.optional-dependencies]
 spatial-graph = ["spatial-graph"]
 ctc = ["dask", "scikit-image", "tifffile", "imagecodecs"]
-rx = ["rustworkx>=0.16.0"]
+rx = ["rustworkx>=0.16.0", "polars"]
 
 [dependency-groups]
 test = ["pytest>=8.3.4", "pytest-cov>=6.2"]
@@ -45,12 +45,15 @@ dev = [
     "ipython",
     "types-PyYAML",
     "spatial-graph",
+    # rx stuff:
     "rustworkx",
+    "polars",
     # ctc stuff:
     "dask",
     "scikit-image",
     "tifffile",
     "imagecodecs",
+    "profilehooks",
 ]
 docs = [
     "mkdocs-material",

@@ -171,6 +171,7 @@ def write_rx(
 def _ingest_dict_rx(graph_dict: GraphDict) -> tuple[rx.PyGraph, dict[int, int]]:
     """Convert a GraphDict to a rustworkx graph."""
     try:
+        import polars as pl
         import rustworkx as rx
     except ImportError as e:
         raise ImportError(
@@ -182,29 +183,24 @@ def _ingest_dict_rx(graph_dict: GraphDict) -> tuple[rx.PyGraph, dict[int, int]]:
     graph = rx.PyDiGraph() if metadata.directed else rx.PyGraph()
     graph.attrs = metadata.model_dump()
 
-    # Add nodes with populated properties
-    node_ids = graph_dict["nodes"].tolist()
-    node_props: list[dict[str, Any]] = [{} for _ in node_ids]
-
     # Populate node properties first
-    indices = np.arange(len(node_ids))
-
-    for name, prop_dict in graph_dict["node_props"].items():
-        values = prop_dict["values"]
-        if "missing" in prop_dict:
-            current_indices = indices[~prop_dict["missing"]]
-            values = values[current_indices]
-        else:
-            current_indices = indices
-
-        values = values.tolist()
-        current_indices = current_indices.tolist()
-
-        for idx, val in zip(current_indices, values, strict=True):
-            node_props[idx][name] = val
+    props_df = pl.DataFrame(
+        {
+            name: pl.Series(prop_dict["values"])
+            for name, prop_dict in graph_dict["node_props"].items()
+        },
+    ).with_columns(
+        pl.when(prop_dict["missing"]).then(None).otherwise(pl.col(name)).alias(name)
+        for name, prop_dict in graph_dict["node_props"].items()
+        if "missing" in prop_dict
+    )
+    node_props = list(props_df.rows(named=True))
 
     # Add nodes with their properties
     rx_node_ids = graph.add_nodes_from(node_props)
+
+    # Add nodes with populated properties
+    node_ids = graph_dict["nodes"].tolist()
 
     # Create mapping from geff node id to rustworkx node index
     to_rx_id_map = dict(zip(node_ids, rx_node_ids, strict=False))
@@ -213,26 +209,22 @@ def _ingest_dict_rx(graph_dict: GraphDict) -> tuple[rx.PyGraph, dict[int, int]]:
     if len(graph_dict["edges"]) > 0:
         # converting to local rx ids
         edge_ids = np.vectorize(to_rx_id_map.__getitem__)(graph_dict["edges"])
+
         # Prepare edge data with properties
-        edges_data: list[dict[str, Any]] = [{} for _ in edge_ids]
-        indices = np.arange(len(edge_ids))
-
-        for name, prop_dict in graph_dict["edge_props"].items():
-            values = prop_dict["values"]
-            if "missing" in prop_dict:
-                current_indices = indices[~prop_dict["missing"]]
-                values = values[current_indices]
-            else:
-                current_indices = indices
-
-            values = values.tolist()
-            current_indices = current_indices.tolist()
-
-            for idx, val in zip(current_indices, values, strict=True):
-                edges_data[idx][name] = val
-
+        edges_df = pl.DataFrame(
+            {
+                name: pl.Series(prop_dict["values"])
+                for name, prop_dict in graph_dict["edge_props"].items()
+            },
+        ).with_columns(
+            pl.when(prop_dict["missing"]).then(None).otherwise(pl.col(name)).alias(name)
+            for name, prop_dict in graph_dict["edge_props"].items()
+            if "missing" in prop_dict
+        )
         # Add edges with their properties
-        graph.add_edges_from([(e[0], e[1], d) for e, d in zip(edge_ids, edges_data, strict=True)])
+        graph.add_edges_from(
+            [(e[0], e[1], d) for e, d in zip(edge_ids, edges_df.rows(named=True), strict=True)]
+        )
 
     return graph, to_rx_id_map
 
