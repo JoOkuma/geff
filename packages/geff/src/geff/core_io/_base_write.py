@@ -19,6 +19,7 @@ from ._serialization import serialize_vlen_property_data
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
+    import zarr
     from zarr.storage import StoreLike
 
     from geff._typing import PropDictNpArray
@@ -304,6 +305,31 @@ def write_id_arrays(
     geff_root[_path.EDGE_IDS] = edge_ids
 
 
+def _assign_array_to_zarr(
+    group: zarr.Group,
+    array: np.ndarray,
+    name: str,
+    zarr_format: Literal[2, 3],
+) -> None:
+    """
+    Helper function to assign an array to a zarr group so each array is a single shard.
+    For zarr format 2, this is a no-op because shards are not supported.
+
+    Args:
+        group (zarr.Group): The group to assign the array to.
+        array (np.ndarray): The array to assign to the group.
+        name (str): The name of the array to assign to the group.
+        zarr_format (Literal[2, 3]): The zarr specification to use when writing the zarr.
+    """
+    z_array = group.create_array(
+        name=name,
+        dtype=array.dtype,
+        shape=array.shape,
+        shards=array.shape if zarr_format == 3 else None,
+    )
+    z_array[:] = array
+
+
 def write_props_arrays(
     geff_store: StoreLike,
     group: Literal["nodes", "edges"],
@@ -375,10 +401,10 @@ def write_props_arrays(
             data = None
 
         prop_group = props_group.create_group(prop)
-        prop_group[_path.VALUES] = values
+        _assign_array_to_zarr(prop_group, values, _path.VALUES, zarr_format=zarr_format)
         if missing is not None:
-            prop_group[_path.MISSING] = missing
+            _assign_array_to_zarr(prop_group, missing, _path.MISSING, zarr_format=zarr_format)
         if data is not None:
-            prop_group[_path.DATA] = data
+            _assign_array_to_zarr(prop_group, data, _path.DATA, zarr_format=zarr_format)
 
     return metadata
